@@ -1,0 +1,3 @@
+- [x] Configure local Gradle distribution in `gradle-wrapper.properties`
+- [x] Verify Gradle can use the local zip (Applied fix, awaiting process release)
+- [x] Verify Dart SDK path awareness
