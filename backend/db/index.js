@@ -1,74 +1,31 @@
-const Database = require('better-sqlite3');
-const path = require('path');
+const { Pool } = require('pg');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'smartspot.db');
-const db = new Database(DB_PATH);
+const connectionString = process.env.DATABASE_URL || process.env.SUPABASE_CONNECTION_STRING;
 
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+if (!connectionString) {
+  console.error('FATAL: DATABASE_URL is not set in your .env file.');
+  process.exit(1);
+}
 
-// ---------- Schema ----------
-db.exec(`
-CREATE TABLE IF NOT EXISTS users (
-  id TEXT PRIMARY KEY,
-  email TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
-  name TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+const pool = new Pool({
+  connectionString,
+  ssl: {
+    rejectUnauthorized: false,
+  },
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+});
 
-CREATE TABLE IF NOT EXISTS reminders (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  notes TEXT,
-  latitude REAL,
-  longitude REAL,
-  radius_meters REAL DEFAULT 100,
-  category TEXT,
-  condition_type TEXT DEFAULT 'arrive', -- arrive | leave | time | combo
-  scheduled_at TEXT,
-  status TEXT NOT NULL DEFAULT 'active', -- active | completed | archived
-  is_favorite INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  deleted_at TEXT
-);
+pool.on('connect', () => {
+  console.log('Connected to Supabase PostgreSQL Database');
+});
 
-CREATE TABLE IF NOT EXISTS reminder_conditions (
-  id TEXT PRIMARY KEY,
-  reminder_id TEXT NOT NULL REFERENCES reminders(id) ON DELETE CASCADE,
-  type TEXT NOT NULL,
-  value TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle Supabase client', err);
+});
 
-CREATE TABLE IF NOT EXISTS favorite_locations (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  label TEXT NOT NULL,
-  latitude REAL NOT NULL,
-  longitude REAL NOT NULL,
-  address TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  deleted_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS location_visits (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  latitude REAL NOT NULL,
-  longitude REAL NOT NULL,
-  label TEXT,
-  visited_at TEXT NOT NULL DEFAULT (datetime('now')),
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_reminders_user ON reminders(user_id);
-CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorite_locations(user_id);
-CREATE INDEX IF NOT EXISTS idx_visits_user ON location_visits(user_id);
-`);
-
-module.exports = db;
+module.exports = {
+  query: (text, params) => pool.query(text, params),
+  pool,
+};
